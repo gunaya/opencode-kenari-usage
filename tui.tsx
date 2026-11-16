@@ -21,12 +21,16 @@ const MICRO_IDR = 1_000_000
 // kind picks the color: "error" red, "alert" warning, anything else muted.
 // A signal, not a plain object: slot JSX only re-renders on reactive reads.
 const [lines, setLines] = createSignal([{ text: "kenari: …", kind: "error" }])
+const [hovered, setHovered] = createSignal(false)
 
 // Resolve theme tokens lazily from setup context; Navigator's own usage shows
 // `theme.current.textMuted` / `warning` / `error` are the stable paths.
 let themeMuted = "#808080"
 let themeWarning = "#e5c07b"
 let themeError = "#ff5555"
+// Button hover colors, same tokens Navigator uses for its hover states.
+let themeText = "#ffffff"
+let themeBgElement = "#2a2a2a"
 
 function formatRupiah(rp) {
   return `Rp ${new Intl.NumberFormat("id-ID").format(rp)}`
@@ -142,6 +146,8 @@ export default Plugin.define({
     themeMuted = context.theme?.current?.textMuted ?? themeMuted
     themeWarning = context.theme?.current?.warning ?? themeWarning
     themeError = context.theme?.current?.error ?? themeError
+    themeText = context.theme?.current?.text ?? themeText
+    themeBgElement = context.theme?.current?.backgroundElement ?? themeBgElement
 
     void refresh()
     const timer = setInterval(refresh, POLL_MS)
@@ -173,7 +179,10 @@ export default Plugin.define({
             </text>
           ))}
           <text
-            fg={themeMuted}
+            fg={hovered() ? themeText : themeMuted}
+            bg={hovered() ? themeBgElement : undefined}
+            onMouseOver={() => setHovered(true)}
+            onMouseOut={() => setHovered(false)}
             onMouseDown={(event) => event.stopPropagation()}
             onMouseUp={(event) => {
               event.stopPropagation()
