@@ -127,18 +127,7 @@ async function refresh() {
   setLines(next)
 }
 
-// Manual refresh: re-poll now and confirm via toast (summary on success,
-// the failing section's line on error).
-async function refreshWithToast(toast) {
-  await refresh()
-  const bad = lines().find((line) => line.kind === "error")
-  toast.show({
-    title: "kenari",
-    message: bad ? bad.text : lines().map((line) => line.text).join(" · "),
-    variant: bad ? "error" : "success",
-    duration: 4000,
-  })
-}
+// Manual refresh: re-poll now; the footer updates reactively via the signal.
 
 export default Plugin.define({
   id: "kenari.usage",
@@ -163,7 +152,7 @@ export default Plugin.define({
           bind: "ctrl+r",
           palette: true,
           slash: { name: "kenari" },
-          run: () => refreshWithToast(context.ui.toast),
+          run: () => refresh(),
         },
       ],
       bindings: ["kenari.usage.refresh"],
@@ -186,7 +175,7 @@ export default Plugin.define({
             onMouseDown={(event) => event.stopPropagation()}
             onMouseUp={(event) => {
               event.stopPropagation()
-              void refreshWithToast(context.ui.toast)
+              void refresh()
             }}
           >
             [ ↻ refresh ]
