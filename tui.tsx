@@ -49,6 +49,19 @@ async function fetchJson(url, key) {
   return res.json()
 }
 
+// Manual refresh: re-poll now and confirm via toast (summary on success,
+// the failing section's line on error).
+async function refreshWithToast(toast) {
+  await refresh()
+  const bad = state.lines.find((line) => line.kind === "error")
+  toast.show({
+    title: "kenari",
+    message: bad ? bad.text : state.lines.map((line) => line.text).join(" · "),
+    variant: bad ? "error" : "success",
+    duration: 4000,
+  })
+}
+
 // Human-short reset time: relative countdown under 30 days, else a date.
 function formatReset(iso) {
   const at = new Date(iso)
@@ -132,6 +145,23 @@ export default Plugin.define({
 
     void refresh()
     const timer = setInterval(refresh, POLL_MS)
+
+    // Palette/slash command + keybind as the manual "button".
+    context.keymap.layer(() => ({
+      mode: "global",
+      commands: [
+        {
+          id: "kenari.usage.refresh",
+          title: "Refresh kenari stats",
+          group: "kenari",
+          bind: "ctrl+r",
+          palette: true,
+          slash: { name: "kenari" },
+          run: () => refreshWithToast(context.ui.toast),
+        },
+      ],
+      bindings: ["kenari.usage.refresh"],
+    }))
 
     const unregister = context.ui.slot({
       append: "sidebar.footer",
