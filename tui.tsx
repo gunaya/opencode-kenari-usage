@@ -172,6 +172,17 @@ export default Plugin.define({
               {line.text}
             </text>
           ))}
+          <box
+            onMouseDown={(event) => event.stopPropagation()}
+            onMouseUp={(event) => {
+              event.stopPropagation()
+              void refreshWithToast(context.ui.toast)
+            }}
+            border
+            padding={1}
+          >
+            <text>↻ refresh</text>
+          </box>
         </box>
       ),
     })
