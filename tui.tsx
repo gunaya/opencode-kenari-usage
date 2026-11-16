@@ -7,6 +7,7 @@
 // (Rp 1 = 1_000_000 micro).
 // API docs: https://kenari.id/docs/account-quota, /docs/usage, /docs/account-balance
 import { Plugin } from "@opencode/plugin/tui"
+import { createSignal } from "solid-js"
 
 const QUOTA_URL = "https://kenari.id/v1/account/quota"
 const USAGE_URL = "https://kenari.id/v1/usage?range=today"
@@ -18,9 +19,8 @@ const WINDOW_LABELS = { week: "week", month: "month" }
 const MICRO_IDR = 1_000_000
 
 // kind picks the color: "error" red, "alert" warning, anything else muted.
-const state = {
-  lines: [{ text: "kenari: …", kind: "error" }],
-}
+// A signal, not a plain object: slot JSX only re-renders on reactive reads.
+const [lines, setLines] = createSignal([{ text: "kenari: …", kind: "error" }])
 
 // Resolve theme tokens lazily from setup context; Navigator's own usage shows
 // `theme.current.textMuted` / `warning` / `error` are the stable paths.
@@ -49,19 +49,6 @@ async function fetchJson(url, key) {
   return res.json()
 }
 
-// Manual refresh: re-poll now and confirm via toast (summary on success,
-// the failing section's line on error).
-async function refreshWithToast(toast) {
-  await refresh()
-  const bad = state.lines.find((line) => line.kind === "error")
-  toast.show({
-    title: "kenari",
-    message: bad ? bad.text : state.lines.map((line) => line.text).join(" · "),
-    variant: bad ? "error" : "success",
-    duration: 4000,
-  })
-}
-
 // Human-short reset time: relative countdown under 30 days, else a date.
 function formatReset(iso) {
   const at = new Date(iso)
@@ -77,7 +64,7 @@ function formatReset(iso) {
 async function refresh() {
   const key = process.env.KENARI_API_KEY
   if (!key) {
-    state.lines = [{ text: "kenari: no KENARI_API_KEY", kind: "error" }]
+    setLines([{ text: "kenari: no KENARI_API_KEY", kind: "error" }])
     return
   }
 
@@ -89,13 +76,13 @@ async function refresh() {
     fetchJson(BALANCE_URL, key),
   ])
 
-  const lines = []
+  const next = []
 
   if (usage.status === "fulfilled") {
     const total = usage.value.total ?? { requests: 0, cost_micro_idr: 0 }
-    lines.push({ text: `today: ${total.requests} req · ${formatMicro(total.cost_micro_idr)}`, kind: "normal" })
+    next.push({ text: `today: ${total.requests} req · ${formatMicro(total.cost_micro_idr)}`, kind: "normal" })
   } else {
-    lines.push({ text: `today: ${errorLine(Number(usage.reason?.message))}`, kind: "error" })
+    next.push({ text: `today: ${errorLine(Number(usage.reason?.message))}`, kind: "error" })
   }
 
   if (quota.status === "fulfilled") {
@@ -110,30 +97,43 @@ async function refresh() {
       const win = windows[name]
       const pct = Math.round(win.used_frac * 100)
       alert ||= pct >= quota.value.alert_pct
-      lines.push({ text: `${WINDOW_LABELS[name] ?? name}: ${formatRupiah(win.remaining_rp)} left · ${pct}%`, kind: alert ? "alert" : "normal" })
+      next.push({ text: `${WINDOW_LABELS[name] ?? name}: ${formatRupiah(win.remaining_rp)} left · ${pct}%`, kind: alert ? "alert" : "normal" })
       // The monthly window shares its reset with the plan cycle, so it doubles
       // as the subscription end date (exact when no early renewal happened).
       if (name === "month") {
         const reset = formatReset(win.resets_at)
-        if (reset) lines.push({ text: reset, kind: "normal" })
+        if (reset) next.push({ text: reset, kind: "normal" })
       }
     }
     if (quota.value.coupon) {
       const left = quota.value.coupon.remaining_rp
-      lines.push({ text: `coupon: ${left == null ? "no limit" : `${formatRupiah(left)} left`}`, kind: "normal" })
+      next.push({ text: `coupon: ${left == null ? "no limit" : `${formatRupiah(left)} left`}`, kind: "normal" })
     }
-    if (!quota.value.plan && !quota.value.coupon) lines.push({ text: "no plan or coupon", kind: "normal" })
+    if (!quota.value.plan && !quota.value.coupon) next.push({ text: "no plan or coupon", kind: "normal" })
   } else {
-    lines.push({ text: `quota: ${errorLine(Number(quota.reason?.message))}`, kind: "error" })
+    next.push({ text: `quota: ${errorLine(Number(quota.reason?.message))}`, kind: "error" })
   }
 
   if (balance.status === "fulfilled") {
-    lines.push({ text: `balance: ${formatMicro(balance.value.available_micro_idr)}`, kind: "normal" })
+    next.push({ text: `balance: ${formatMicro(balance.value.available_micro_idr)}`, kind: "normal" })
   } else {
-    lines.push({ text: `balance: ${errorLine(Number(balance.reason?.message))}`, kind: "error" })
+    next.push({ text: `balance: ${errorLine(Number(balance.reason?.message))}`, kind: "error" })
   }
 
-  state.lines = lines
+  setLines(next)
+}
+
+// Manual refresh: re-poll now and confirm via toast (summary on success,
+// the failing section's line on error).
+async function refreshWithToast(toast) {
+  await refresh()
+  const bad = lines().find((line) => line.kind === "error")
+  toast.show({
+    title: "kenari",
+    message: bad ? bad.text : lines().map((line) => line.text).join(" · "),
+    variant: bad ? "error" : "success",
+    duration: 4000,
+  })
 }
 
 export default Plugin.define({
@@ -167,22 +167,21 @@ export default Plugin.define({
       append: "sidebar.footer",
       render: () => (
         <box flexDirection="column">
-          {state.lines.map((line) => (
+          {lines().map((line) => (
             <text fg={line.kind === "error" ? themeError : line.kind === "alert" ? themeWarning : themeMuted}>
               {line.text}
             </text>
           ))}
-          <box
+          <text
+            fg={themeMuted}
             onMouseDown={(event) => event.stopPropagation()}
             onMouseUp={(event) => {
               event.stopPropagation()
               void refreshWithToast(context.ui.toast)
             }}
-            border
-            padding={1}
           >
-            <text>↻ refresh</text>
-          </box>
+            [ ↻ refresh ]
+          </text>
         </box>
       ),
     })
